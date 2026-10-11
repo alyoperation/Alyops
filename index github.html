@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"><title>İstasyon Operasyon Kaydı</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--tx:#14202e;--mu:#667487;--ln:#dde3ea;--ac:#0b5fd1;--ok:#14803c;--no:#c62828;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f151c;--card:#18212b;--tx:#e8eef5;--mu:#8fa0b3;--ln:#2a3644;--ac:#4a9bff;--ok:#4ccf80;--no:#ff6b6b}}
+:root[data-theme="dark"]{--bg:#0f151c;--card:#18212b;--tx:#e8eef5;--mu:#8fa0b3;--ln:#2a3644;--ac:#4a9bff;--ok:#4ccf80;--no:#ff6b6b}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:12px}
+h1{font-size:18px;margin:4px 0 10px}h2{font-size:14px;color:var(--mu);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.04em}
+.tabs{display:flex;gap:6px;margin-bottom:10px}.tabs button{flex:1}
+button,input,textarea,select{font:inherit;color:var(--tx)}
+button{background:var(--card);border:1px solid var(--ln);border-radius:10px;padding:10px 12px;cursor:pointer}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}button.on{border-color:var(--ac);color:var(--ac);font-weight:600}
+input,textarea,select{background:var(--card);border:1px solid var(--ln);border-radius:8px;padding:8px;width:100%}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:10px;margin-bottom:8px}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}.g label{font-size:12px;color:var(--mu)}.w{grid-column:1/-1}
+.cp{display:grid;grid-template-columns:1fr 104px 84px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--ln)}
+.cp:last-child{border:0}.cp.d span{color:var(--ok);font-weight:600}.cp button{padding:9px 4px}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:center}.mu{color:var(--mu);font-size:13px}
+.ok{color:var(--ok);font-weight:700}.no{color:var(--no);font-weight:700}
+.kp{display:flex;gap:8px}.kp .card{flex:1;text-align:center;margin:0}.kp b{font-size:20px;display:block}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}td,th{padding:6px 8px;border-bottom:1px solid var(--ln);text-align:start}th{color:var(--mu)}
+textarea.r{direction:ltr;text-align:left;height:330px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+</style></head><body>
+<div style="display:flex;justify-content:space-between;align-items:center"><h1 id="h1">✈️ İstasyon Operasyon Kaydı</h1><div style="display:flex;gap:6px"><button id="lo" style="display:none"></button><select id="lang" style="width:auto;background:var(--card);color:var(--tx);border:1px solid var(--ln);border-radius:10px;padding:8px"><option value="tr">TR</option><option value="en">EN</option><option value="ar">AR</option></select></div></div>
+<div class="tabs"><button id="t-ops">Operasyon</button><button id="t-wh">Veri Ambarı</button></div>
+<div id="warn" class="mu"></div><div id="app"></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const MON=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const INB=[['td','Touch down'],['ata','On block (ATA)'],['pdF','First pax disembarked'],['pdL','Last pax disembarked'],['bag1','İlk bagaj geldi'],['bagL','Son bagaj geldi'],['secS','Security başladı'],['secE','Security bitti']];
+const DEP=[['co','Counter open'],['cc','Counter closed'],['fuel','Yakıt tamam'],['clnS','Cleaning start'],['cln','Temizlik tamam'],['ldS','Loading started'],['ldE','Loading finished'],['lsa','Loadsheet arrival'],['imm','Immigration clearance'],['bs','Boarding start'],['peF','First pax embarked'],['peL','Last pax embarked'],['bc','Boarding completed'],['dc','Door closed'],['no','Nose out']];
+const REP=[['co','COUNTER OPEN'],['cc','COUNTER CLOSED'],['imm','IMMIGRATION CLEARANCE'],['bs','BOARDING START'],['peF','FIRST PAX EMBARKED'],['peL','LAST PAX EMBARKED'],['bc','B/COMPLETED'],['dc','DOOR CLOSED'],['no','NOSE OUT']];
+// ====== FIREBASE AYARLARI: kurulum rehberindeki firebaseConfig degerlerini buraya yapistirin ======
+const FB={apiKey:"AIzaSyCKmtRr4OpSHjRyI44zOmWciFKIHVvwDAc",authDomain:"aly-operation.firebaseapp.com",projectId:"aly-operation",appId:"1:454334830100:web:833fea8f5648e244907901"};
+// ======================================================================================
+let user=null,unsub=null;
+let db=null,F={},cur=null,tab='ops',csv='',wk='',wx='',dayv=false,dayd='',L=(()=>{try{const s=localStorage.getItem('lang');if(s)return s}catch(_){}const l=(navigator.language||'tr').toLowerCase();return l.startsWith('tr')?'tr':l.startsWith('ar')?'ar':'en'})();
+const EN={'İstasyon Operasyon Kaydı':'Station Operations Log','Operasyon':'Operations','Veri Ambarı':'Data Warehouse','İlk bagaj geldi':'First bag arrived','Son bagaj geldi':'Last bag arrived','Security başladı':'Security started','Security bitti':'Security completed','Yakıt tamam':'Fueling done','Catering tamam':'Catering done','Temizlik tamam':'Cleaning done','Yükleme / LDS tamam':'Loading / LDS done','Güncelle':'Update','Uçuş no':'Flight no','Gelen uçuş':'Inbound flight','Tarih':'Date','Rota':'Route','Uçak tipi':'Aircraft type','Planlanan yer süresi (dk)':'Planned ground time (min)','Gecikme kodu':'Delay code','Açıklama':'Remarks','Uçuş bilgisi':'Flight info','Gelen uçak / bagaj':'Inbound aircraft / baggage','Giden uçuş süreçleri':'Departure processes','Operasyon raporu':'Operations report','Raporu kopyala':'Copy report','Kopyalandı ✓':'Copied ✓','Metni seçip kopyalayın':'Select and copy the text','← Liste':'← List','+ Yeni uçuş':'+ New flight','Son uçuşlar':'Recent flights','Henüz kayıt yok.':'No records yet.','açık':'open','Başlangıç':'From','Bitiş':'To','Uçuş / rota ara':'Search flight / route','Uçuş sayısı':'Flights','Uçuş':'Flight','CSV indir (Excel)':'Download CSV (Excel)','Kod':'Code','Kayıt hatası: ':'Save error: ','⚠️ Veri kaydı şu an kapalı: kayıtlar yalnızca bu oturumda tutulur.':'⚠️ Data storage is off: records are kept for this session only.','⚠️ Veri okunamadı':'⚠️ Could not read data'};
+Object.assign(EN,{'Gün sonu raporu':'End-of-day report','Bu tarihte uçuş kaydı yok.':'No flights on this date.'});
+const AR={'İstasyon Operasyon Kaydı':'سجل عمليات المحطة','Operasyon':'العمليات','Veri Ambarı':'مستودع البيانات','İlk bagaj geldi':'وصول أول حقيبة','Son bagaj geldi':'وصول آخر حقيبة','Security başladı':'بدء الفحص الأمني','Security bitti':'انتهاء الفحص الأمني','Yakıt tamam':'اكتمال التزود بالوقود','Catering tamam':'اكتمال التموين','Temizlik tamam':'اكتمال التنظيف','Yükleme / LDS tamam':'اكتمال التحميل / LDS','Güncelle':'تحديث','Check-in':'تسجيل الآن','Uçuş no':'رقم الرحلة','Gelen uçuş':'الرحلة القادمة','Tarih':'التاريخ','Rota':'المسار','Uçak tipi':'نوع الطائرة','Planlanan yer süresi (dk)':'زمن الوقوف المخطط (دقيقة)','Gecikme kodu':'رمز التأخير','Açıklama':'ملاحظات','Uçuş bilgisi':'معلومات الرحلة','Gelen uçak / bagaj':'الطائرة القادمة / الحقائب','Giden uçuş süreçleri':'عمليات الرحلة المغادرة','Operasyon raporu':'تقرير العمليات','Raporu kopyala':'نسخ التقرير','Kopyalandı ✓':'تم النسخ ✓','Metni seçip kopyalayın':'حدد النص وانسخه','← Liste':'→ القائمة','+ Yeni uçuş':'+ رحلة جديدة','Son uçuşlar':'آخر الرحلات','Henüz kayıt yok.':'لا توجد سجلات بعد.','açık':'مفتوحة','Başlangıç':'من','Bitiş':'إلى','Uçuş / rota ara':'بحث عن رحلة / مسار','Uçuş sayısı':'الرحلات','Uçuş':'الرحلة','CSV indir (Excel)':'تنزيل CSV (Excel)','Kod':'الرمز','Kayıt hatası: ':'خطأ في الحفظ: ','\u26a0\ufe0f Veri kaydı şu an kapalı: kayıtlar yalnızca bu oturumda tutulur.':'\u26a0\ufe0f تخزين البيانات متوقف: السجلات تُحفظ لهذه الجلسة فقط.','\u26a0\ufe0f Veri okunamadı':'\u26a0\ufe0f تعذر قراءة البيانات','Gün sonu raporu':'تقرير نهاية اليوم','Bu tarihte uçuş kaydı yok.':'لا توجد رحلات في هذا التاريخ.'};
+Object.assign(EN,{'Giden uçuş no':'Departure flight no','Diğer':'Other'});Object.assign(AR,{'Giden uçuş no':'رقم الرحلة المغادرة','Diğer':'أخرى'});
+const AC={'B737-800':'16C/135Y','B737 MAX':'16C/135Y','B737-900':'16C/153Y','A321':'16C/164Y','A321neo':'20C/174Y'},SCH={'TK697':'03:45','TK689':'09:55'};
+function fnSel(f){const k=SCH[f.fn]?f.fn:'__other';return `<div><label>Giden uçuş no</label><select data-f="fn">`+Object.keys(SCH).map(a=>`<option ${k===a?'selected':''}>${a}</option>`).join('')+`<option value="__other" ${k==='__other'?'selected':''}>Diğer</option></select>${k==='__other'?`<input data-f="fn" value="${esc(f.fn)}" style="margin-top:6px">`:''}</div>`}
+function acSel(f){const k=AC[f.ac]?f.ac:'__other';return `<div><label>Uçak tipi</label><select data-f="ac">`+Object.keys(AC).map(a=>`<option ${k===a?'selected':''}>${a}</option>`).join('')+`<option value="__other" ${k==='__other'?'selected':''}>Diğer</option></select>${k==='__other'?`<input data-f="ac" value="${esc(f.ac)}" style="margin-top:6px">`:''}</div>`}
+Object.assign(EN,{'E-posta':'Email','Şifre':'Password','Giriş yap':'Sign in','Çıkış':'Sign out','Giriş başarısız':'Sign-in failed','\u26a0\ufe0f Firebase ayarı girilmemiş':'\u26a0\ufe0f Firebase config is missing'});Object.assign(AR,{'E-posta':'البريد الإلكتروني','Şifre':'كلمة المرور','Giriş yap':'تسجيل الدخول','Çıkış':'تسجيل الخروج','Giriş başarısız':'فشل تسجيل الدخول','\u26a0\ufe0f Firebase ayarı girilmemiş':'\u26a0\ufe0f لم يتم إدخال إعدادات Firebase'});
+const tt=s=>L==='en'?EN[s]||s:L==='ar'?AR[s]||EN[s]||s:s;
+function setW(k,x){wk=k;wx=x||'';const w=document.getElementById('warn');if(w)w.textContent=wk?tt(wk)+wx:''}
+function tr(root){if(L==='tr')return;const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let n;while(n=w.nextNode()){if(n.parentNode.tagName==='TEXTAREA')continue;const v=n.nodeValue.trim();if(tt(v)!==v)n.nodeValue=tt(v);else if(v.includes(' dk'))n.nodeValue=v.replace(/ dk\b/g,L==='ar'?' د':' min')}}
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const hm=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const mn=t=>+t.slice(0,2)*60+ +t.slice(3,5);
+const diff=(a,b)=>{if(!a||!b)return null;let d=mn(b)-mn(a);if(d<-720)d+=1440;if(d>720)d-=1440;return d};
+const fd=d=>d?d.slice(8)+MON[+d.slice(5,7)-1]:'';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ttl=f=>(+f.pc||0)+(+f.py||0)+(+f.pi||0);
+function calc(f){const t=f.t||{},dl=diff(f.std,t.dc),g=diff(t.ata,t.dc);return{dl,otp:dl==null?null:dl<=0,g,gtp:g==null?null:g<=(+f.plan||55)}}
+const yn=v=>v==null?'-':v?'YES':'NO';
+function report(f){const t=f.t||{},c=calc(f),p=n=>String(n||0).padStart(2,'0'),v=k=>t[k]||'--:--';
+ let s=`*${f.fn}/${fd(f.date)}\n${f.route} ${f.ac}\nCAP:${f.cap}\nPax: ${p(f.pc)}C/${p(f.py)}Y/${p(f.pi)}INF\n TTL : ${ttl(f)}\n—————————— ———\n`;
+ s+=`\n*ARRIVAL*${f.inFn?' '+f.inFn+'/'+fd(f.date):''}\nTouch down: ${v('td')}\nOn block (ATA): ${v('ata')}\nFirst pax disembarked: ${v('pdF')}\nLast pax disembarked: ${v('pdL')}\nFirst bag arrived: ${v('bag1')}\nLast bag arrived: ${v('bagL')}\nSecurity started: ${v('secS')}\nSecurity completed: ${v('secE')}\n`;
+ s+=`\n*DEPARTURE* ${f.fn}/${fd(f.date)}\nSTD: ${f.std||'--:--'}\n`;
+ REP.forEach(([k,l])=>s+=`${l}: ${v(k)}\n`);
+ if(['fuel','clnS','cln','ldS','ldE','lsa'].some(k=>t[k])) s+=`\nFuel: ${t.fuel||'-'}\nCleaning: ${t.clnS||'-'} - ${t.cln||'-'}\nLoading: ${t.ldS||'-'} - ${t.ldE||'-'}\nLoadsheet arrival: ${t.lsa||'-'}\n`;
+ s+=`\n*GTP: ${yn(c.gtp)}*\n(${c.g??'-'} min/ ${f.plan||55} min)\n\n*OTP: ${yn(c.otp)}*\n`;
+ if(c.otp===false)s+=` ${c.dl} MIN ${f.dcode||''}${f.remark?' / '+f.remark:''}\n`;
+ return s+'*All are local times*'}
+function save(id,patch){const f=F[id];if(!f)return;const em=(user&&user.email)||'';if(patch.t){patch.by={};for(const x in patch.t)patch.by[x]=em}
+ for(const k in patch){if(k==='t'||k==='by')f[k]=Object.assign({},f[k],patch[k]);else f[k]=patch[k]}
+ if(db){const u={};for(const k in patch){if(k==='t'||k==='by')for(const x in patch[k])u[k+'.'+x]=patch[k][x];else u[k]=patch[k]}db.doc('flights/'+id).update(u).catch(e=>alert(tt('Kayıt hatası: ')+(e&&e.message||e)))}}
+function newFlight(){const id='f'+Date.now().toString(36),f={fn:'TK697',inFn:'TK696',date:today(),route:'ALY-IST',ac:'B737-800',cap:'16C/135Y',pc:0,py:0,pi:0,std:'03:45',plan:55,dcode:'',remark:'',t:{},by:{},createdBy:(user&&user.email)||'',ts:Date.now()};
+ F[id]=f;cur=id;if(db)db.doc('flights/'+id).set(f).catch(e=>alert(tt('Kayıt hatası: ')+(e&&e.message||e)));render()}
+function cpRows(list,f){return list.map(([k,l])=>{const v=(f.t||{})[k]||'';return `<div class="cp ${v?'d':''}"><span>${l}</span><input type="time" data-k="${k}" value="${v}"><button class="${v?'':'p'}" data-now="${k}">${v?'Güncelle':'Check-in'}</button></div>`}).join('')}
+function fld(k,l,f,type='text',cls=''){return `<div class="${cls}"><label>${l}</label><input type="${type}" data-f="${k}" value="${esc(f[k])}"></div>`}
+function detail(f){const c=calc(f);
+ return `<div class="row"><button id="back">← Liste</button><span class="mu">${esc(f.fn)} · ${fd(f.date)}</span></div>
+ <h2>Uçuş bilgisi</h2><div class="card g">${fnSel(f)}${fld('inFn','Gelen uçuş',f)}${fld('date','Tarih',f,'date')}${fld('route','Rota',f)}${acSel(f)}${fld('cap','CAP',f)}${fld('pc','Pax C',f,'number')}${fld('py','Pax Y',f,'number')}${fld('pi','Pax INF',f,'number')}${fld('std','STD',f,'time')}${fld('plan','Planlanan yer süresi (dk)',f,'number')}${fld('dcode','Gecikme kodu',f)}${fld('remark','Açıklama',f,'text','w')}</div>
+ <h2>Gelen uçak / bagaj</h2><div class="card">${cpRows(INB,f)}</div>
+ <h2>Giden uçuş süreçleri</h2><div class="card">${cpRows(DEP,f)}</div>
+ <div class="kp"><div class="card"><span class="mu">OTP</span><b class="${c.otp==null?'':c.otp?'ok':'no'}">${yn(c.otp)}</b><span class="mu">${c.dl==null?'':c.dl+' dk'}</span></div><div class="card"><span class="mu">GTP</span><b class="${c.gtp==null?'':c.gtp?'ok':'no'}">${yn(c.gtp)}</b><span class="mu">${c.g==null?'':c.g+' / '+(f.plan||55)+' dk'}</span></div></div>
+ <h2>Operasyon raporu</h2><textarea class="r" id="rep" readonly>${esc(report(f))}</textarea><button class="p" id="copy" style="width:100%;margin-top:8px">Raporu kopyala</button>`}
+function list(){const a=Object.entries(F).sort((x,y)=>(y[1].date+(y[1].std||'')).localeCompare(x[1].date+(x[1].std||''))).slice(0,40);
+ return `<button class="p" id="new" style="width:100%">+ Yeni uçuş</button><button id="day" style="width:100%;margin-top:8px">Gün sonu raporu</button><h2>Son uçuşlar</h2>`+(a.length?a.map(([id,f])=>{const c=calc(f);return `<div class="card row" data-open="${id}" style="cursor:pointer"><div><b>${esc(f.fn)}</b> <span class="mu">${esc(f.route)} · ${fd(f.date)} · STD ${f.std||'--'}</span></div><span class="${c.otp==null?'mu':c.otp?'ok':'no'}">${c.otp==null?'açık':'OTP '+yn(c.otp)}</span></div>`}).join(''):'<p class="mu">Henüz kayıt yok.</p>')}
+function wh(){const d=new Date(),a=new Date(d-29*864e5),iso=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+ wh.from=wh.from||iso(a);wh.to=wh.to||today();wh.q=wh.q||'';
+ const rows=Object.values(F).filter(f=>f.date>=wh.from&&f.date<=wh.to&&(!wh.q||(f.fn+f.route+f.inFn).toLowerCase().includes(wh.q.toLowerCase()))).sort((x,y)=>(x.date+(x.std||'')).localeCompare(y.date+(y.std||'')));
+ const cs=rows.map(f=>({f,c:calc(f)})),o=cs.filter(x=>x.c.otp!=null),g=cs.filter(x=>x.c.gtp!=null),pc=(n,m)=>m?Math.round(n/m*100)+'%':'-';
+ const K=[...INB,...DEP].map(x=>x[0]);
+ csv='\ufeff'+(L!=='tr'?['date','flight','inbound_flight','route','aircraft','cap','pax_C','pax_Y','pax_INF','pax_total','std',...K,'delay_min','OTP','ground_min','planned_min','GTP','delay_code','remarks',...K.map(k=>k+'_by'),'created_by']:['tarih','ucus','gelen_ucus','rota','ucak','cap','pax_C','pax_Y','pax_INF','pax_toplam','std',...K,'gecikme_dk','OTP','yer_suresi_dk','planlanan_dk','GTP','gecikme_kodu','aciklama',...K.map(k=>k+'_by'),'olusturan']).join(';')+'\n'+cs.map(({f,c})=>[f.date,f.fn,f.inFn,f.route,f.ac,f.cap,f.pc,f.py,f.pi,ttl(f),f.std,...K.map(k=>(f.t||{})[k]||''),c.dl??'',yn(c.otp),c.g??'',f.plan,yn(c.gtp),f.dcode,f.remark,...K.map(k=>(f.by||{})[k]||''),f.createdBy||''].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\n');
+ return `<div class="card g"><div><label>Başlangıç</label><input type="date" id="wf" value="${wh.from}"></div><div><label>Bitiş</label><input type="date" id="wt" value="${wh.to}"></div><div class="w"><label>Uçuş / rota ara</label><input id="wq" value="${esc(wh.q)}" placeholder="TK697, ALY..."></div></div>
+ <div class="kp"><div class="card"><span class="mu">Uçuş sayısı</span><b>${rows.length}</b></div><div class="card"><span class="mu">OTP</span><b>${pc(o.filter(x=>x.c.otp).length,o.length)}</b></div><div class="card"><span class="mu">GTP</span><b>${pc(g.filter(x=>x.c.gtp).length,g.length)}</b></div></div>
+ <button class="p" id="dl" style="width:100%;margin:8px 0">CSV indir (Excel)</button>
+ <div class="card sc"><table><tr><th>Tarih</th><th>Uçuş</th><th>Rota</th><th>Pax</th><th>STD</th><th>DC</th><th>OTP</th><th>GTP</th><th>Kod</th></tr>${cs.map(({f,c})=>`<tr><td>${fd(f.date)}</td><td>${esc(f.fn)}</td><td>${esc(f.route)}</td><td>${ttl(f)}</td><td>${f.std||''}</td><td>${(f.t||{}).dc||''}</td><td class="${c.otp?'ok':c.otp===false?'no':''}">${yn(c.otp)}</td><td class="${c.gtp?'ok':c.gtp===false?'no':''}">${yn(c.gtp)}</td><td>${esc(f.dcode)}</td></tr>`).join('')}</table></div>`}
+function dayReport(d){const a=Object.values(F).filter(f=>f.date===d).sort((x,y)=>(x.std||'').localeCompare(y.std||''));if(!a.length)return '';
+const p=n=>String(n||0).padStart(2,'0'),cs=a.map(f=>({f,c:calc(f)})),o=cs.filter(x=>x.c.otp!=null),g=cs.filter(x=>x.c.gtp!=null),pc=(n,m)=>m?Math.round(n/m*100)+'%':'-',oo=o.filter(x=>x.c.otp).length,gg=g.filter(x=>x.c.gtp).length,stn=(a[0].route||'').split('-')[0];
+let s=`*${stn} DAILY STATION REPORT*\n${fd(d)}\n—————————— ———\nFlights: ${a.length} | Pax: ${a.reduce((n,f)=>n+ttl(f),0)}\nOTP: ${oo}/${o.length} (${pc(oo,o.length)}) | GTP: ${gg}/${g.length} (${pc(gg,g.length)})\n`;
+cs.forEach(({f,c})=>{const t=f.t||{};s+=`\n*${f.fn}* ${f.route} ${f.ac}\nPax: ${p(f.pc)}C/${p(f.py)}Y/${p(f.pi)}INF (TTL ${ttl(f)})\nSTD ${f.std||'--:--'} | DC ${t.dc||'--:--'} | NOSE OUT ${t.no||'--:--'}\nOTP: ${yn(c.otp)}${c.otp===false?` (${c.dl} MIN ${f.dcode||''})`:''} | GTP: ${yn(c.gtp)} (${c.g??'-'}/${f.plan||55} min)\n`});
+const dl=cs.filter(x=>x.c.otp===false);if(dl.length){s+=`\n*Delays*\n`;dl.forEach(({f,c})=>s+=`${f.fn} - ${c.dl} MIN - ${f.dcode||'-'}${f.remark?' - '+f.remark:''}\n`)}
+return s+`\n*All are local times*`}
+function dayView(){const r=dayReport(dayd);return `<div class="row"><button id="back">← Liste</button></div><h2>Gün sonu raporu</h2><div class="card"><label class="mu">Tarih</label><input type="date" id="dd" value="${dayd}"></div>`+(r?`<textarea class="r" id="rep" readonly>${esc(r)}</textarea><button class="p" id="copy" style="width:100%;margin-top:8px">Raporu kopyala</button>`:`<p class="mu">Bu tarihte uçuş kaydı yok.</p>`)}
+function loginView(){return `<div class="card g"><div class="w"><label>E-posta</label><input id="em" type="email" autocomplete="username"></div><div class="w"><label>Şifre</label><input id="pw" type="password" autocomplete="current-password"></div><button class="p w" id="li">Giriş yap</button></div>`}
+function render(){document.getElementById('t-ops').className=tab==='ops'?'on':'';document.getElementById('t-wh').className=tab==='wh'?'on':'';
+ const el=document.getElementById('app');el.innerHTML=!user?loginView():tab==='wh'?wh():dayv?dayView():(cur&&F[cur]?detail(F[cur]):list());tr(el);document.documentElement.lang=L;document.getElementById('h1').textContent='✈️ '+tt('İstasyon Operasyon Kaydı');document.getElementById('t-ops').textContent=tt('Operasyon');document.getElementById('t-wh').textContent=tt('Veri Ambarı');document.getElementById('lang').value=L;document.documentElement.dir=L==='ar'?'rtl':'ltr';document.querySelector('.tabs').style.display=user?'flex':'none';const lo=document.getElementById('lo');lo.style.display=user?'':'none';lo.textContent=tt('Çıkış');setW(wk,wx)}
+document.addEventListener('click',async e=>{const t=e.target.closest('button,[data-open]');if(!t)return;
+ if(t.id==='li'){firebase.auth().signInWithEmailAndPassword(document.getElementById('em').value.trim(),document.getElementById('pw').value).catch(e=>setW('Giriş başarısız',' ('+(e&&e.code)+')'))}else if(t.id==='lo'){firebase.auth().signOut()}else if(t.id==='t-ops'){tab='ops';dayv=false;render()}else if(t.id==='t-wh'){tab='wh';render()}
+ else if(t.id==='new')newFlight();else if(t.id==='back'){cur=null;dayv=false;render()}else if(t.id==='day'){dayv=true;dayd=dayd||today();render()}
+ else if(t.dataset.open){cur=t.dataset.open;render()}
+ else if(t.dataset.now){save(cur,{t:{[t.dataset.now]:hm()}});render()}
+ else if(t.id==='copy'){const r=document.getElementById('rep');r.select();try{await navigator.clipboard.writeText(r.value);t.textContent=tt('Kopyalandı ✓')}catch(_){try{document.execCommand('copy');t.textContent=tt('Kopyalandı ✓')}catch(__){t.textContent=tt('Metni seçip kopyalayın')}}}
+ else if(t.id==='dl'){try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='istasyon-veri-'+wh.from+'_'+wh.to+'.csv';document.body.appendChild(a);a.click();a.remove()}catch(_){const x=document.createElement('textarea');x.value=csv;x.style.height='160px';t.after(x);x.select()}}});
+document.addEventListener('change',e=>{const i=e.target;if(i.id==='lang'){L=i.value;try{localStorage.setItem('lang',L)}catch(_){}render();return}if(i.id==='dd'){dayd=i.value;render();return}
+ if(i.dataset.k){save(cur,{t:{[i.dataset.k]:i.value}});render()}
+ else if(i.dataset.f==='ac'){const v=i.tagName==='SELECT'&&i.value==='__other'?'':i.value;save(cur,AC[v]?{ac:v,cap:AC[v]}:{ac:v});render()}else if(i.dataset.f==='fn'){const v=i.tagName==='SELECT'&&i.value==='__other'?'':i.value.toUpperCase().replace(/\s/g,''),p={fn:v};if(SCH[v])p.std=SCH[v];const m=v.match(/^([A-Z]{2})(\d+)$/);if(m)p.inFn=m[1]+(+m[2]-1);save(cur,p);render()}else if(i.dataset.f){const n=['pc','py','pi','plan'].includes(i.dataset.f);save(cur,{[i.dataset.f]:n?+i.value||0:i.value});render()}
+ else if(i.id==='wf'){wh.from=i.value;render()}else if(i.id==='wt'){wh.to=i.value;render()}else if(i.id==='wq'){wh.q=i.value;render()}});
+function ready(){
+ if(!FB.apiKey||FB.apiKey.startsWith('BURAYA')){setW('\u26a0\ufe0f Firebase ayarı girilmemiş');return}
+ firebase.initializeApp(FB);db=firebase.firestore();
+ firebase.auth().onAuthStateChanged(u=>{user=u;if(unsub){unsub();unsub=null}
+  if(u){setW('');unsub=db.collection('flights').onSnapshot(s=>{const a=document.activeElement;if(a&&/INPUT|TEXTAREA/.test(a.tagName))return;F={};s.docs.forEach(d=>{F[d.id]=Object.assign({t:{},by:{}},d.data())});render()},e=>{setW('\u26a0\ufe0f Veri okunamadı',' ('+(e&&e.code)+')')})}else{F={};cur=null}
+  render()})}
+render();ready();
+</script></body></html>
